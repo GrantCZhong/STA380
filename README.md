@@ -1,1 +1,3 @@
-# STA380
+# STA380 Exercises
+
+
