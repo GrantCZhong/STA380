@@ -1,0 +1,903 @@
+---
+title: "STA 380 Exercises"
+author: "Grant Zhong"
+date: "8/18/2019"
+output:
+  html_document: default
+  pdf_document: default
+---
+```{r StartUp,eval=FALSE}
+rm(list=ls())
+setwd("~/Desktop/MSBA/Predictive Modeling/STA380 HW")
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This is the R Markdown file for STA 380 Exercises for Grant Zhong, Abhinav Singh, Arjun Rao, and Thiru Vinayagam.
+
+```{r Clear Workspace}
+rm(list=ls())
+```
+
+**Green Buildings**
+```{r,echo=FALSE,warning=FALSE,include=FALSE}
+rm(list=ls())
+library(tidyverse)
+library(ggplot2)
+library(xts)
+library(fpp)
+library(ggmap)
+library(dplyr)
+library(plyr)
+library(reshape2)
+library(egg)
+options(warn=-1)
+```
+
+```{r,echo=FALSE}
+green = read.csv('greenbuildings.csv')
+attach(green)
+
+
+```
+###First we take a look at data production of green houses to determine how to proceed with data.
+
+The developer is right, she should have second thoughts. The moment you start thinking about housing in real life, you realize random data from the whole country in not representative of a single city, so this analysis is useless, and the realtor has a poor business sense to use it to direct her decision. That being said, we get started by graphing the density of green and non-green building production over time.  
+
+```{r,include=FALSE}
+#Cleaning Data
+#first look at data production of green houses to determin how to proceed with data
+
+dng= as.data.frame(green)
+g = ggplot(dng, aes(x=dng$age))
+g + geom_density(aes(fill=factor(green_rating)), alpha=0.6) +
+  labs(title="Density plot of Green vs Non-Green Buildings", 
+       subtitle="Density of Buildings vs Age",
+       caption="Source: mpg data set in R",
+       x="Building Age", y="Density of new buildings",
+       fill="0- Non-Green \n1- Green")
+```
+
+We see that the market really started its green house production about 30 years ago, and in general, green houses follow the market, with the decline around 25 years ago, but more recently, it seem people have been producing green houses. We will proceed by looking only looking at homes produced in the past 30 years. Technology changes with time and older buildings don't really represent our target time period.
+
+Also, we agree with the excel guru that buildings with <10% occupancy are outliers, so we removed those. Finally, our building is a 15 story multiplex, so it is not helpful to compare it to small apartments or giant skyscrapers, as there are differences in building design and energy uses, so we limited our comparisons to 15 +/- 2 stories.
+
+
+
+```{r,include=FALSE}
+
+rep_set = subset(green, leasing_rate>.1 )
+rep_set2 = subset(rep_set, age<30 )
+rep_set3 = subset(rep_set2, stories>=13 & stories <=17)
+
+dng= as.data.frame(rep_set3)
+
+
+g = ggplot(dng, aes(x=dng$age))
+g + geom_density(aes(fill=factor(green_rating)), alpha=0.6) +
+  labs(title="Density plot of Green vs Non-Green Buildings", 
+       subtitle="Density of Buildings vs Age",
+       caption="Source: mpg data set in R",
+       x="Building Age", y="Density of new buildings",
+       fill="0- Non-Green \n1- Green")
+
+
+
+```
+
+###Green and non-green buildings follow similar trends.
+Shows that green and not green buildings tend to follow similar market trends.
+Before splitting into green and not green, we wanted to see if there was a difference in they were in the Net or No-net group. It would silly to compare models for people who pay their utilities on their own vs through rent without taking that into consideration.
+
+```{r}
+
+#checking net vs no net ==> $8/sq feet
+rep_set_net= subset(rep_set, net==1 )
+rep_set_nonet =subset(rep_set, net==0 )
+#summary(rep_set_net$Rent)
+#summary(rep_set_nonet$Rent)
+q= mean(rep_set_net$Rent)
+w= mean(rep_set_nonet$Rent)
+renters <- data.frame("Net" = c("Net", "No Net"),
+                      "Rent" = c(q,w))
+p <-ggplot(data=renters, aes(x=Net, y=Rent), label = Rent) +
+  geom_bar(stat="identity", color= "black", fill= "darkolivegreen4", width= .3)+ labs(title="Rent in Net vs Non-net Rentals")
+p
+
+
+
+
+
+```
+
+###Just as expected
+As expected, seems that there is a difference in means and medians for net vs no net prices.
+Now that we have identified our sample, we proceeded to split into green and non-green buildings. 
+
+
+```{r,include=FALSE}
+
+green_only_net = subset(rep_set_net, rep_set_net$green_rating==1)
+non_green_net= subset(rep_set_net, rep_set_net$green_rating==0)
+green_only_nonet = subset(rep_set_nonet, rep_set_nonet$green_rating==1)
+non_green_nonet= subset(rep_set_nonet, rep_set_nonet$green_rating==0)
+
+#annual revenue green only net
+argon_rev= mean((green_only_net$Rent))*250000
+argon_cost= 0
+argon_prof= argon_rev- argon_cost
+#annual revenue green only no net
+argonn_rev= (mean((green_only_nonet$Rent)))*250000
+argonn_cost= (mean(green_only_nonet$Gas_Costs) + mean(green_only_nonet$Electricity_Costs))*250000 
+argonn_prof= argonn_rev- argonn_cost
+#annual revenue not green net
+arngn_rev= mean((non_green_net$Rent))*250000
+arngn_cost=0
+arngn_prof= arngn_rev-arngn_cost
+#annual revenue not green no net
+arngnn_rev=  (mean((non_green_nonet$Rent)))*250000
+arngnn_cost= ( mean(non_green_nonet$Gas_Costs) + mean(non_green_nonet$Electricity_Costs))*250000
+arngnn_prof= arngnn_rev-arngnn_cost
+
+
+
+
+
+
+```
+
+Before, the excel guru used .9 occupancy, but we decided to calculate the occupancy based on the similar housing opetions to explore the preference for green and non-green houses.
+
+
+```{r,include=FALSE}
+
+
+#mean occupancy
+argon_occ= (mean((green_only_net$leasing_rate)) )
+argonn_occ= (mean((green_only_nonet$leasing_rate)) )
+arngn_occ=  (mean((non_green_net$leasing_rate)) )
+arngnn_occ=  (mean((non_green_nonet$leasing_rate)) )
+
+
+#x= dataframe  group( argon etc. ), revenue, costs, operating profit, leasing rate
+x <- data.frame("Group" = c("Green w/ net", "Green w/o net", "Not Green w/ net", "Not Green w/o net"), 
+                "revenue" = c(argon_rev,argonn_rev, arngn_rev, arngnn_rev), 
+                "costs" = c(argon_cost, argonn_cost, arngn_cost, arngnn_cost), 
+                "profit"= c(argon_prof, argonn_prof, arngn_prof, arngnn_prof), 
+                "occupancy"= c(argon_occ, argonn_occ, arngn_occ, arngnn_occ))
+
+dfr <- data.frame("costs" = c(argon_cost, argonn_cost, arngn_cost, arngnn_cost), 
+                "profit"= c(argon_prof, argonn_prof, arngn_prof, arngnn_prof))
+
+#plot occupancy
+p <-ggplot(data=x, aes(x=Group, y=occupancy)) +
+  geom_bar(stat="identity", color= "black", fill= "lightblue4")+ labs(title="Average occupancy in different business models")
+p
+
+
+```
+###Occupancy rates range from 83.7 to 89.5%. 
+While similar, it can 6% can make a difference. Now we will understand the revenue.  
+```{r,echo=FALSE}
+
+p <-ggplot(data=x, aes(x=Group, y=revenue)) +
+  geom_bar(stat="identity", color= "red") +labs(title="Revenue per year for different business models")
+p
+
+```
+
+From this we see that green properties that offer to pay the rent for the client can make ~$450000 more per year in revenue. But rembember, revenue is not profit, we have to look at the additional costs of actually paying the electricity. Now lets look at cost of electricity and gas.
+
+
+```{r,echo=FALSE}
+p <-ggplot(data=x, aes(x=Group, y=costs)) +
+  geom_bar(stat="identity")+ labs(title="Electrical and Gas Costs per year")
+p
+```
+Haha, the cost of electricity is barelely $10,000 per year for a 250000 sqft building. Thats around a thousanth of the rent cost, but customers are willing to pay. That means the profits are barely changed:  
+
+```{r,echo=FALSE}
+
+
+charts.data <- x
+p <-ggplot(data=x, aes(x=Group, y=profit)) +
+  geom_bar(stat="identity", fill= 'midnightblue')
+p
+
+```
+Based on this we'd suggest going green but offering a no net policy, because rich people are willing to pay. 
+
+By investing in the green, no net policy business model, we would make 8003738 dollars per year, it would take us 14.4 years to repay the entire 105 million amount, or 6.5 years to repay the 5 million dollar using just the bonus. 
+
+With the next best model non-green, no net, it would take 15.6 years to pay the 100 million investment.
+
+
+
+
+```{r,echo=FALSE}
+#Linear regression graph 
+plot(c(0,20), c(10, 150), type = "n", xlab="Years", ylab="Profit in millions", main= "20-Year Projected Foracast", asp = .1)
+abline(h=105, col= ' red')
+abline(a=0, b=7.284, col='blue')
+```
+
+**Flights at ABIA**<br><br>
+```{r,echo=FALSE,warning=FALSE,include=FALSE}
+rm(list=ls())
+library(tidyverse)
+library(ggplot2)
+library(xts)
+library(fpp)
+library(ggmap)
+library(dplyr)
+library(plyr)
+library(reshape2)
+library(egg)
+options(warn=-1)
+```
+
+```{r,echo=FALSE}
+Airport=read.csv("ABIA.csv")
+```
+
+```{r,include=FALSE}
+#Removing the outliers 
+Airport=Airport[-c(60414,98309),]
+```
+
+```{r,include=FALSE}
+AUSdeps=Airport[Airport$Origin=="AUS",]
+AUSdeps_counts=count(AUSdeps,'Dest')
+AUSdeps2 <- AUSdeps_counts[order(-AUSdeps_counts$freq),] 
+AUSdepsplot=AUSdeps2[AUSdeps2$freq>700,]
+```
+
+```{r,include=FALSE}
+AUSdepsplot$Dest <- factor(AUSdepsplot$Dest, levels = AUSdepsplot$Dest[order(-AUSdepsplot$freq)])
+
+Top_Destinations=ggplot(AUSdepsplot,aes(Dest,y=freq))+
+  geom_col(na.rm=TRUE,color="red",fill="blue")+
+  labs(x="Destinations",y="Total flights in 2008",title="Top Destinations from Austin in 2008")+
+  theme(panel.background = element_blank(),
+                  panel.grid.minor = element_blank(),
+                  axis.ticks  = element_blank(),
+                  axis.line   = element_line(colour=NA),
+                  axis.line.x = element_line(colour="grey80")) 
+```
+```{r,echo=FALSE}
+AUSdepsDAL=AUSdeps[AUSdeps$Dest=="DAL",]
+AUSdepsDFW=AUSdeps[AUSdeps$Dest=="DFW",]
+AUSdepsIAH=AUSdeps[AUSdeps$Dest=="IAH",]
+AUSdepsPHX=AUSdeps[AUSdeps$Dest=="PHX",]
+AUSdepsDEN=AUSdeps[AUSdeps$Dest=="DEN",]
+TopAUSdeps=rbind(AUSdepsDAL,AUSdepsDFW,AUSdepsIAH,AUSdepsPHX,AUSdepsDEN,deparse.level = 1)
+```
+
+```{r,echo=FALSE}
+Topdep=ggplot(TopAUSdeps,aes(y=ArrDelay,x=factor(DayOfWeek),fill=factor(DayOfWeek)))+
+  geom_bar(stat="identity",position = "dodge",na.rm=TRUE)+
+  facet_grid(factor(TopAUSdeps$Dest) ~ .)+
+  coord_flip()+
+  labs(y="Arrival Delay (minutes)",x="Day of the Week",title="Arrival Delay per Day of the Week",subtitle="Data for Top 5 destinations from Austin")
+
+ArrDelPerDay = Topdep + scale_fill_manual(breaks=c("1", "2", "3","4","5","6","7"),values=c("grey46", "red", "grey46", "grey46", "grey46", "grey46", "grey46"), labels=c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"),name="Day Of the Week")
+```
+
+### We are going to try to find the day with the most arrival delays for flights from Austin Airport. First we will find the Top 5 Destinations from Austin for 2008. 
+```{r,echo=FALSE}
+Reasons=TopAUSdeps[TopAUSdeps$DayOfWeek==2,]
+Reasons=Reasons[complete.cases(Reasons),]
+DF=Reasons[,c(15,18,25:29)]
+DF2=gather(DF,event,total,CarrierDelay:LateAircraftDelay)
+
+Causes=ggplot(DF2,aes(Dest,total,fill=event))+
+  geom_bar(stat="identity",position="fill",na.rm=TRUE)+
+  theme_classic()+
+  labs(title="Causes of Arrival Delays on Tuesdays",subtitle="Data for Top 5 Destinations from Austin",x="Destination",y="Total Delay Causes (Percentages)")+
+  scale_fill_manual(values=c("red", "green", "blue", "yellow", "brown"),name="Cause of Delay")
+```
+```{r,echo=FALSE}
+Top_Destinations
+```
+
+
+
+
+
+
+
+
+### For each of these 5 destinations we will find the arrival delay per day for each different destination. 
+```{r,echo=FALSE}
+ArrDelPerDay
+```
+
+
+
+
+
+
+
+
+
+
+
+### The majority of delays are on Tuesday for 3/5 destinations. Since this is a surprising insight lets find out why Tuesdays have the most delays for all 5 of the destinations. 
+```{r,echo=FALSE}
+Causes
+```
+
+
+
+
+
+
+
+### Most delays at these airports are because of late aircraft. If you are flying from Austin to DAL, DFW, or IAH (all in Texas) don't fly on a Tuesday if you don't want to risk being late. 
+
+
+
+**Portfolio Modeling**<br><br>
+```{r Exploratory Analysis,include=TRUE}
+
+library(mosaic)
+library(quantmod)
+library(foreach)
+
+myETFs = c('SPY','TQQQ','FSLR')
+getSymbols(myETFs, from="2014-08-12")
+
+
+# Adjust for splits and dividends
+SPYa = adjustOHLC(SPY)
+TQQQa = adjustOHLC(TQQQ)
+FSLRa = adjustOHLC(FSLR)
+
+
+# Look at close-to-close changes
+plot(ClCl(SPYa))
+plot(ClCl(TQQQa))
+plot(ClCl(FSLRa))
+
+# Combine close to close changes in a single matrix
+all_returns = cbind(ClCl(SPYa),ClCl(TQQQa),ClCl(FSLRa))
+head(all_returns)
+all_returns = as.matrix(na.omit(all_returns))
+N = nrow(all_returns)
+
+#Calculate volatility of ETFs
+sigma_SPY = sd(all_returns[,1])
+sigma_TQQQ = sd(all_returns[,2])
+sigma_FSLR = sd(all_returns[,3])
+```
+
+
+
+
+The standard deviation for SPY is the lowest at 0.00848 so SPY is considered our safe ETF. The standard deviation for TQQQ and FSLR are 0.0705 and 0.02747 respectively which will make these two our more volatile and aggressive ETFs.
+<br>
+
+
+```{r Simulations with Bootstrap method,include=TRUE}
+# Now simulate 3 scenarios over four trading weeks
+
+#Sim1 is safe, most in SPY
+
+initial_wealth = 100000
+
+sim1 = foreach(i=1:5000, .combine='rbind') %do% {
+	total_wealth = initial_wealth
+	weights = c(0.90,0.05,0.05)
+	holdings = weights * total_wealth
+	n_days = 20
+	wealthtracker = rep(0, n_days)
+	for(today in 1:n_days) {
+		return.today = resample(all_returns, 1, orig.ids=FALSE)
+		holdings = holdings + holdings*return.today
+		total_wealth = sum(holdings)
+		wealthtracker[today] = total_wealth
+	}
+	wealthtracker
+}
+
+#Sim2 is moderate, split between SPY and the high risk ETFs
+
+initial_wealth = 100000
+
+sim2 = foreach(i=1:5000, .combine='rbind') %do% {
+	total_wealth = initial_wealth
+	weights = c(0.40, 0.30, 0.30)
+	holdings = weights * total_wealth
+	n_days = 20
+	wealthtracker = rep(0, n_days)
+	for(today in 1:n_days) {
+		return.today = resample(all_returns, 1, orig.ids=FALSE)
+		holdings = holdings + holdings*return.today
+		total_wealth = sum(holdings)
+		wealthtracker[today] = total_wealth
+	}
+	wealthtracker
+}
+
+#Sim3 is aggressive, almost none in SPY and all in the high risk ETFs
+
+initial_wealth = 100000
+sim3 = foreach(i=1:5000, .combine='rbind') %do% {
+	total_wealth = initial_wealth
+	weights = c(0.10,0.30,0.60)
+	holdings = weights * total_wealth
+	n_days = 20
+	wealthtracker = rep(0, n_days)
+	for(today in 1:n_days) {
+		return.today = resample(all_returns, 1, orig.ids=FALSE)
+		holdings = holdings + holdings*return.today
+		total_wealth = sum(holdings)
+		wealthtracker[today] = total_wealth
+	}
+	wealthtracker
+}
+```
+
+
+```{r Calculate Returns and Plot,include=TRUE}
+# Average Returns
+avg_value_sim1 = mean(sim1[,n_days])
+avg_value_sim2 = mean(sim2[,n_days])
+avg_value_sim3 = mean(sim3[,n_days])
+
+avg_return_sim1 = (avg_value_sim1-100000)/1000 #percentage
+avg_return_sim2 = (avg_value_sim2-100000)/1000 #percentage
+avg_return_sim3 = (avg_value_sim3-100000)/1000 #percentage
+
+returns_sim1 = sim1[,n_days]-100000
+returns_sim2 = sim2[,n_days]-100000
+returns_sim3 = sim3[,n_days]-100000
+
+#Plot
+hist(returns_sim1, breaks=30,xlim = c(-20000,30000),
+     xlab='Return Amount',ylab='Frequency of Return', main="Return Frequency for Safe Portfolio")
+hist(returns_sim2, breaks=30,xlim = c(-40000,100000), xlab='Return Amount', ylab='Frequency of Return', main="Return Frequency for Moderate Portfolio")
+hist(returns_sim3, breaks=30,xlim = c(-50000,100000), xlab='Return Amount', ylab='Frequency of Return', main="Return Frequency for Aggressive Portfolio")
+```
+
+
+
+
+
+From the plots of our returns from different portfolios, I can see that our safe portfolio has a more normal distribution of returns. Our moderate portfolio has more frequent days of high negative returns but also more days of high positive returns. Our aggressive portfolio has similar patterns with our moderate portfolio (frequent, negative day but very high return days as well). <br>
+
+Our safe portfolio does not have any days with returns higher than 30000 while our moderate and aggressive portfolios both have returns of almost 100000. <br>
+```{r Calculate VaR}
+#Calculate VaR
+
+sim1_P= quantile(sim1[,n_days], 0.05) 
+sim2_P = quantile(sim2[,n_days], 0.05) 
+sim3_P = quantile(sim3[,n_days], 0.05)
+
+p0 = 100000
+
+var_sim1 = p0-sim1_P
+var_sim2 = p0-sim2_P
+var_sim3 = p0-sim3_P
+cat('The VaR for our safe portfolio is',var_sim1,'\n')
+cat('The VaR for our moderate portfolio is',var_sim2,'\n') 
+cat('The VaR for our aggressive portfolio is',var_sim3,'\n')
+
+```
+
+For our safe portfolio with a 5% confidence, the Value at Risk (VaR) is 6092. For our moderate portfolio, the VaR is 11517. Finally, for our aggressive portfolio, the VaR is 14832. <br>
+
+**Market Segmentation**<br><br>
+```{r}
+library(tidyverse)  
+library(cluster)    
+library(factoextra)
+library(NbClust)
+library(corrplot)
+library(gridExtra)
+```
+
+
+```{r}
+social_marketing <- read_csv("social_marketing.csv")
+head(social_marketing)
+```
+
+```{r}
+cormat <- cor(social_marketing[c(2:37)])
+corrplot(cormat, method = 'circle', type = 'lower')
+```
+By analyzing relationships between quantitative variables, we see that photo_sharing & chatter, chatter & shopping, politics & travel, computers & travel, personal fitness & health/nutrition, and more have very strong correlations. 
+
+I will use clustering to answer this question.
+```{r}
+scaled_data <- scale(social_marketing[,2:37], center=TRUE, scale=TRUE)
+
+# Extract the centers and scales from the rescaled data (which are named attributes)
+cent = attr(scaled_data,"scaled:center")
+scale = attr(scaled_data,"scaled:scale")
+```
+
+Now that the values have been standardized and scaled, we can do a elbow and silhouette plot to determine optimal number of clusters
+```{r}
+# Elbow curve
+wss = fviz_nbclust(scaled_data, kmeans, method = "wss") +
+  labs(subtitle = "Elbow method")
+
+# Silhouette curve
+sil = fviz_nbclust(scaled_data, kmeans, method = "silhouette")+
+  labs(subtitle = "Silhouette method")
+
+grid.arrange(wss,sil,ncol = 2) 
+```
+Let's try 5 clusters as it's in the middle between too few and too many.
+
+```{r}
+set.seed(1)
+clust5 = kmeans(scaled_data, 5, nstart=25)
+
+# Visualizing the clusters on a dimensionally reduced plot
+clus5plot = fviz_cluster(clust5, data = scaled_data, 
+             ellipse.type = "euclid", # Concentration ellipse
+             ggtheme = theme_classic(),geom = c("point")
+             )
+
+
+# 6 clusters
+set.seed(1)
+clust6 = kmeans(scaled_data, 6, nstart=25)
+# Visualizing the clusters on a dimensionally reduced plot
+clus6plot = fviz_cluster(clust6, data = scaled_data, 
+             ellipse.type = "euclid", # Concentration ellipse
+             ggtheme = theme_classic(),geom = c("point")
+             )
+grid.arrange(clus5plot,clus6plot,ncol = 2)
+```
+
+I will use 5 clusters as it strikes a balance between complexity & interpretability.
+```{r}
+res = aggregate(scaled_data, by=list(cluster=clust5$cluster), mean)
+res
+
+#we dont want spam or clutter
+results1 = res[,-c(2,36)]
+results1 = as.data.frame(results1)
+results1
+
+
+transposed <- t(results1)
+
+# get row and colnames in order
+colnames(transposed) <- rownames(results1)
+rownames(transposed) <- colnames(results1)
+
+# REmoving cluster names
+t_results2 = transposed[-1,]
+
+k = colnames(t_results2)[apply(t_results2,1,which.max)]
+clus_features = cbind(rownames(t_results2),k)
+
+clus_features
+```
+
+From  the output, we can see that cluster 2 entails people who are interested in travel, news, politics, and automotive. They can be grouped as businessmen.
+Cluster 3 is those interested in health, eco, outdoors, personal fitness. They can be grouped as athletes.
+Cluster 4 is those  in sports, food, family, crafts, religion, parenting, and school. They can be grouped as family-oriented.
+Cluster 5 is photosharing, tv, home, music, gaming, shopping, sports, cooking, business, art, beauty, dating, fashion, small business, and adult. They can be grouped as single or young adults.
+
+
+Cluster 1 seems to not have any distinctive characteristics.
+
+**Author Attribution**<br><br>
+```{r Import Libraries}
+library(tm)
+library(SnowballC)
+library(plyr)
+
+readerPlain = function(fname){
+				readPlain(elem=list(content=readLines(fname)), 
+							id=fname, language='en')}
+
+author_dirs = Sys.glob('C50train/*')
+author_dirs_test = Sys.glob('C50test/*')
+```
+
+```{r Create Corpus for training data}
+author_list = c()
+labels = c()
+for(author in author_dirs) {
+	author_name = substring(author,10)
+	files_to_add = Sys.glob(paste0(author, '/*.txt'))
+	author_list = append(author_list, files_to_add)
+	labels = append(labels, rep(author_name, length(files_to_add)))
+}
+
+Trainingtext = lapply(author_list, readerPlain) 
+names(Trainingtext)=author_list
+names(Trainingtext)=sub('.txt','',names(author_list))
+
+my_corpus = VCorpus(VectorSource(Trainingtext))
+names(my_corpus) = labels
+```
+
+```{r Create Corpus for test data}
+author_list_test = c()
+labels_test = c()
+for(author in author_dirs_test) {
+	author_name_test = substring(author,9)
+	files_to_add_test = Sys.glob(paste0(author, '/*.txt'))
+	author_list_test = append(author_list_test, files_to_add_test)
+	labels_test = append(labels_test, rep(author_name_test, length(files_to_add_test)))
+}
+
+Trainingtext_test = lapply(author_list_test, readerPlain) 
+names(Trainingtext_test)=author_list_test
+names(Trainingtext_test)=sub('.txt','',names(author_list_test))
+
+my_corpus_test = VCorpus(VectorSource(Trainingtext_test))
+names(my_corpus_test) = labels_test
+```
+
+```{r Process Text Data}
+my_corpus = tm_map(my_corpus, content_transformer(tolower)) 
+my_corpus = tm_map(my_corpus, content_transformer(removeNumbers)) 
+my_corpus = tm_map(my_corpus, content_transformer(removePunctuation)) 
+my_corpus = tm_map(my_corpus, content_transformer(stripWhitespace)) 
+my_corpus = tm_map(my_corpus, content_transformer(removeWords), stopwords("en"))
+my_corpus = tm_map(my_corpus, stemDocument) 
+
+my_corpus_test = tm_map(my_corpus_test, content_transformer(tolower)) 
+my_corpus_test = tm_map(my_corpus_test, content_transformer(removeNumbers)) 
+my_corpus_test = tm_map(my_corpus_test, content_transformer(removePunctuation)) 
+my_corpus_test = tm_map(my_corpus_test, content_transformer(stripWhitespace)) 
+my_corpus_test = tm_map(my_corpus_test, content_transformer(removeWords), stopwords("en"))
+my_corpus_test = tm_map(my_corpus_test, stemDocument)
+```
+
+```{r Create DTM}
+DTM = DocumentTermMatrix(my_corpus)
+DTM = removeSparseTerms(DTM, 0.95)
+DTM
+
+DTM_test = DocumentTermMatrix(my_corpus_test)
+DTM_test = removeSparseTerms(DTM_test, 0.95)
+DTM_test
+
+# Create matrices for our train and test dataset
+X = as.matrix(DTM)
+X_test = as.matrix(DTM_test)
+```
+We need to account for all words in our train dataset that aren't in test and all the words in our test dataset that aren't in train. <br>
+```{r}
+# Get the list of words in the training set
+X_words = colnames(X)
+
+# Get the list of words in the test set
+X_test_words = colnames(X_test)
+
+# Create 2 empty vectors to store words to add to test and words to drop from test
+test_add = vector(length=0)
+test_drop = vector(length=0)
+
+# Loop through the test words and add those not in the train to the vector test_drop
+for (test_word in X_test_words) {
+  if (!test_word %in% X_words) {
+    test_drop <- c(test_drop, test_word)
+  }
+}
+
+# Loop through the train words and add those not in test to the vector test_add
+for (word in X_words) {
+  if (!word %in% X_test_words) {
+    test_add <- c(test_add, word)
+  }
+}
+
+# Create a matrix of 0's to insert into the test matrix
+zero <- matrix(0, nrow = nrow(X), ncol=length(test_add))
+
+# Name the columns using the words in test_add
+colnames(zero) <- test_add
+
+# Add the zero matrix to the test matrix
+X2_test = cbind(X_test, zero)
+
+# Sort the columns alphabetically so they match the X2
+X2_test = X2_test[,order(colnames(X2_test))]
+
+# Drop the words in test_drop from the test matrix
+X2_test = X2_test[,!colnames(X2_test) %in% test_drop]
+```
+Our team chose to run PCA with regression on the dataset for prediction. <br>
+```{r Import Libraries - PCA/PCR}
+library(glmnet)
+library(nnet)
+library(caret)
+```
+
+```{r PCR Results}
+A = X
+b = rownames(X)
+
+pc_words_list = prcomp(A, scale=TRUE)
+screeplot(pc_words_list,npcs=30)
+
+
+K = 682
+V = pc_words_list$rotation[,1:K]
+scores = A %*% V
+
+#X2_test = X2_test[,1:682]
+# Calculate test alphas
+test_X = X2_test %*% V
+
+# Set train x and train y
+train_X = scores
+train_y = rownames(scores)
+
+# Run multinomial regression
+multi = glmnet(x=train_X, y=train_y, alpha=0, family="multinomial")
+
+
+# Predict
+predict = predict(multi, newx=test_X, type="class", s=0)
+
+# Check accuracy
+multi_accuracy = as.integer(predict == rownames(X2_test))
+
+# Return the total accuracy
+mean(multi_accuracy)
+```
+Our accuracy achieved shown above. Our team also tried to perform randomForest (shown below) but unfortunately the model crashes our computers and takes a long time to compute so we chose not to evaluate the chunk but included code instead.
+```{r RandomForest, eval=FALSE}
+library(tibble)
+library(dplyr)
+library(randomForest)
+library(caret)
+library(kknn)
+X_df = as.data.frame(X)
+new_X = X_df %>% rownames_to_column('Author')
+X2_test_df = as.data.frame(X2_test)
+new_X_test = X2_test_df %>% rownames_to_column('Author')
+
+new_X[,1] = lapply(new_X[,1],as.factor)
+new_X_test[,1] = lapply(new_X_test[,1],as.factor)
+
+new_X$missing_values <- apply(new_X, 1, function(x) any(is.na(x)))
+new_X[is.na(new_X)]<-0
+
+new_X_test$missing_values <- apply(new_X_test, 1, function(x) any(is.na(x)))
+new_X_test[is.na(new_X_test)]<-0
+
+new_X <- subset(new_X, select=-814)
+new_X_test <-subset(new_X_test,select=-814)
+
+train_mod = randomForest(Author~.,data=new_X,mtry=3)
+pred_mod = predict(train_mod,new_X_test,type='class')
+
+tbl = table(pred_mod,new_X_test$Author)
+accuracy_rf= sum(diag(tbl))/sum(tbl)
+
+cat(accuracy_rf)
+```
+**Association Rule Mining**<br><br>
+```{r Load Data and Exploratory Analysis,include=TRUE}
+library(arules)
+library(arulesViz)
+library(tidyverse)
+
+grocery_raw = read.transactions('groceries.txt',header=FALSE,format='basket',sep=',',rm.duplicates = FALSE)
+arules::inspect(grocery_raw[1:10])
+
+
+#Visualize the frequency of items in dataset
+itemFrequencyPlot(grocery_raw,support=0.1, topN=10)
+```
+
+From the relative frequency plot, whole milk is by far our most frequent active item in each transaction as it appears in over 25% of all baskets. <br>
+
+```{r Apriori Algorithm,include=TRUE}
+
+#Run Apriori Algorithm
+groceryrules = apriori(grocery_raw, 
+	parameter=list(support=.01, confidence=.25, maxlen=5))
+
+arules::inspect(groceryrules[1:5]) #Look at top 10 rules
+
+#Support is the # of transactions that include all items in the antecedent and consequent parts of the rule. A percentage of the total number of transactions in the dataset.
+
+#Confidence is the ratio of the $ of transactions that include all the items in the consequent and antecedent to the number of transactions that include all items in the antecedent.
+
+#Lift is the ratio of Confidence to Expected Confidence. Lift > 1 means the relationship between antecendent and consequent is more significant than expected if the two sets were independent. Larger the lift, more significant the association.
+```
+
+```{r Support Sort,include=TRUE}
+
+#Sort rules by support, find most frequent associations of items
+groceryrules = sort(groceryrules, by = 'support')
+inspect(groceryrules[1:5])
+```
+
+From this sort, whole milk (being dominant in our item set) will appear as a consequent item in 5-8% of all baskets. As the most dominant rule states, no matter what customers buy in the grocery store, 25.6% of them will end up buying whole milk. <br>
+
+```{r Confidence Sort,include=TRUE}
+#Sort rules by confidence to find most likely to be true associations
+groceryrules = sort(groceryrules, by = 'confidence')
+inspect(groceryrules[1:5])
+```
+
+From this sort, we are almost 60% confident that whenever people buy the item combinations on the left hand side they will end up buying the respective item combinations on the right hand side. <br>
+
+```{r Lift Sort,include=TRUE}
+#Sort rules by lift to find most significant associations of items
+groceryrules = sort(groceryrules, by = 'lift')
+inspect(groceryrules[1:5])
+```
+
+From our sort, we can identify that people who buy items on the left hand side together are 3 times more likely to buy root vegetables/other vegetables versus other customers who do not buy the item sets on the left hand side. <br>
+
+Because whole milk is present in over 25% of our baskets, we are particularly interested in seeing what consequent items our customers will buy if they pick up whole milk at our store. <br>
+
+```{r Sort by Whole Milk on LHS,include=TRUE}
+
+groceryrules_milk_left = apriori(grocery_raw, 
+parameter=list(support=.01, confidence=.1, maxlen=5),appearance =list(default = 'rhs',lhs ='whole milk'))
+
+groceryrules_milk_left = sort(groceryrules_milk_left, by ='lift')
+arules::inspect(groceryrules_milk_left)
+```
+From rules with whole milk on LHS, we can see that customers who buy whole milk  are almost 2x more likely to buy butter, curd, domestic eggs, etc. From the RHS results, we recommend the store place these items near whole milk so customers can grab them easily.<br>
+
+```{r Sort by Whole Milk on RHS,include=TRUE}
+
+groceryrules_milk_right = apriori(grocery_raw, 
+parameter=list(support=.01, confidence=.1, maxlen=5),appearance =list(default = 'lhs',rhs ='whole milk'))
+
+
+groceryrules_milk_right = sort(groceryrules_milk_right, by ='lift')
+arules::inspect(groceryrules_milk_right)
+```
+
+From rules with whole milk on RHS, we can see that cuustomer who buy {curd,yogurt}, {butter, other vegetables}, or {root vegetables, yogurt/tropical fruit} are over 2.2x more likely to buy whole milk from the store. This means it will be strategic for the store to place the items on the LHS closer to whole milk as well.
+
+```{r Sort by Other Vegetables on LHS,include=TRUE}
+
+groceryrules_other_vegetables = apriori(grocery_raw, 
+parameter=list(support=.01, confidence=.1, maxlen=5),appearance =list(default = 'rhs',lhs ='other vegetables'))
+
+inspect(groceryrules_other_vegetables)
+```
+We see that people who buy other vegetables are 2.08x more likely to buy whipped/sour cream, so it makes sense to place them near each other in the grocery store. 
+
+```{r Sort by Other Vegetables on RHS,include=TRUE}
+
+groceryrules_other_vegetables_d = apriori(grocery_raw, 
+parameter=list(support=.01, confidence=.1, maxlen=5),appearance =list(default = 'lhs',rhs ='other vegetables'))
+
+inspect(groceryrules_other_vegetables_d)
+```
+
+From the above output, we see that if one buys {citrus fruit, root vegetables}, they are 3.03x more likely to buy other vegetables.
+
+``` {r Further Analysis and Visualization,include=TRUE}
+#Remove redudant rules
+redundantrules = is.redundant(groceryrules)
+groceryrules = groceryrules[!redundantrules]
+
+
+#Plot Rules
+plot(groceryrules, measure = c("support", "lift"), shading = "confidence")
+
+# graph-based visualization
+sub1 = subset(groceryrules, subset=confidence > 0.01 & support > 0.005)
+summary(sub1)
+plot(sub1, method='graph')
+?plot.rules
+
+plot(head(sub1, 25, by='lift'), method='graph')
+```
+
+
+To conclude, our discovered item sets makes sense. From each type of sort we were able to gain valuable information about key items that our customers purchase consequently with other items. After general analysis, we focused on visualizing rules based on our top two most bought items (whole milk and other vegetables) in order to maximize the store's profits with items important to the customers.
