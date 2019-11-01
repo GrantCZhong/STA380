@@ -5,7 +5,6 @@ Exercises for Predictive Modeling. The team leveraged supervised and unsupervise
 
 
 Techiniques used include:
-- Linear Regression
-- Logistic Regression
-- Ridge and Lasso Regularization
+
+- K means Cluster
 - Principal Component Analysis
